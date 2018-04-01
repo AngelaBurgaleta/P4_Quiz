@@ -1,278 +1,315 @@
-const {models} = require('./model'); //Ahora esto nos pasa un objeto sequelize, una base de datos
+const Sequelize = require('sequelize');
+const {models} = require('./model');
 const {log, biglog, errorlog, colorize} = require("./out");
-const Sequelize = require ('sequelize');
-exports.helpCmd = rl => {  //el tiene aquí puesto un rl. Tambien hay que cambiar los
-//const por exports.
-    log("Comandos:");
-    log(" h|help - muestra esta ayuda");
-    log("list - Listar los quizzes existentes");
-    log("show <id> - Muestra la pregunta y respuesta del quiz indicado");
-    log("add - añadir un nuevo quiz interactivamente");
-    log("delete <id> - Borrar el quiz indicado");
-    log("edit <id> - Editar el quiz indicado");
-    log("test <id> - Probar el quiz indicado");
-    log("p|play - Jugar a preguntar aleatoriamente todos los quizzes");
-    log("credits - ´Créditos ");
-    log("q|quit - Salir del programa");
-    rl.prompt();
-}
 
-//Hacemos una funcion que transforme rl.quiestion en una funcion basada en promesas:
-const makeQuestion = (rl,text) =>{
-    return new Sequelize.Promise ((resolve, reject) => { //Js 6 te da las promesas que se definen con "Promise", nosotros usamos BlueBird que se hace poniendo "Sequelize.Promise"
-        rl.question(colorize(text, 'red'), answer => {
+/**
+ * Muestra la ayuda
+ *
+ * @param rl Objetivo readline usado para implementar el CLI.
+ */
+exports.helpCmd = (socket, rl) => {
+    log(socket, "Commandos");
+    log(socket, " h|help - Muestra esta ayuda.");
+    log(socket, " list - Listar los quizzes existentes.");
+    log(socket, " show <id> - Muestra la pregunta y la respuesta el quiz indicado.");
+    log(socket, " add - Añadir un nuevo quiz interactivamente.");
+    log(socket, " delete <id> - Borrar el quiz indicado.");
+    log(socket, " edit <id> - Editar el quiz indicado.");
+    log(socket, " test <id> - Probar el quiz indicado.");
+    log(socket, " p|play - Jugar a preguntar aleatoriamente todos los quizzes.");
+    log(socket, " credits - Créditos.");
+    log(socket, " q|quit - Salir del programa.");
+    rl.prompt();
+};
+
+/**
+ * Lista todos los quizzes existentes en el modelo
+ *
+ * @param rl Objeto readline usado para implementar el CLI.
+ */
+exports.listCmd = (socket, rl) => {
+
+    models.quiz.findAll()
+        .each(quiz => {
+        log(socket, ` [${colorize(quiz.id, 'magenta')}]: ${quiz.question}`);
+})
+.catch(error => {
+        errorlog(socket, error.message);
+})
+.then(() => {
+        rl.prompt();
+});
+
+};
+/**
+ * Esta función devuelva una promesa que:
+ * - Valida que se ha introducido un valor para el parámetro.
+ * - Convierte el parámetro en un número entero.
+ *Si todo va bien, la promesa se satisface y devuelve el valor de id a usar.
+ *
+ *@param id Parametro con el índice a validar
+ */
+const validateId = id => {
+    return new Sequelize.Promise((resolve, reject) =>{
+        if(typeof id === "undefined"){
+        reject(new Error(`Falta el parametro <id>.`));
+    }else {
+        id = parseInt(id); //coger la parte entera
+        if(Number.isNaN(id)){
+            reject(new Error(`El valor de del parametro <id> no es un numero.`));
+        }else{
+            resolve(id);
+        }
+    }
+
+});
+};
+
+/**
+ * Muestra el quiz indicador en el parámetro: la pregunta y la respuesta.
+ *
+ * @param rl Objeto readline usado para implementar el CLI.
+ * @param id Clave del quiz a mostrar
+ */
+exports.showCmd = (socket, rl, id) => {
+    validateId (id)
+        .then(id => models.quiz.findById(id))
+.then(quiz => {
+        if(!quiz){
+        throw new Error(`No existe un quiz asociado al id=${id}.`);
+    }
+    log(socket, ` [${colorize(quiz.id, 'magenta')}]: ${quiz.question} ${colorize('=>', 'magenta')} ${quiz.answer}`);
+})
+.catch(error =>{
+        errorlog(socket, error.message);
+})
+.then(() =>{
+        rl.prompt();
+});
+};
+
+/**
+ * Esta función devuelve una promesa que cuando se cumple, proporciona el texto introducido.
+ * Entonces la llamada a then que hay que hacer la promesa devuelta sera:
+ *    .then(answer => {...})
+ *
+ * También colorea en rojo el texto de la pregunta, elimina espacios al principio y final
+ *
+ * @param text Pregunta que hay que hacerle al usuario.
+ * @param rl Objeto readline usado para implementar el CLI.
+ */
+const readQuestion = (rl,text) =>{
+    return new Sequelize.Promise((resolve,reject) => {
+        rl.question(colorize(text,'red'), answer => {
         resolve(answer.trim());
 });
 });
 };
-exports.addCmd = rl => { //mirar en el api como fuciona rl.question
-    makeQuestion (rl, 'Introduzca una pregunta: ') //promesa que finaliza cuando la pregunta es introducida
+
+/**
+ * Añade un nuevo quiz al modelo.
+ *Pregunta interactivamente por la pregunta y por la respuesta.
+ *
+ *Hay que recordar que el funcionamiento de la funcion rl.question es asíncrono.
+ *El prompt hay que sacarlo cuando ya se ha terminado la interacción con el usuario,
+ *es decir, la llamada a rl.prompt() se debe hacer en la callback de la segunda
+ *llamada a rl.question.
+ *
+ * @param rl Objeto readline usado para implementar el CLI.
+ */
+exports.addCmd = (socket, rl) => {
+    makeQuestion(rl, ' Introduzca una pregunta: ')
         .then(q => {
-        return makeQuestion(rl, 'Introduzca la respuesta: ')
-            .then(a => { //esto se anida para tener acceso a la variable q
+        return makeQuestion(rl, ' Introduzca la respuesta ')
+            .then(a => {
             return {question: q, answer: a};
 });
 })
-
-.then(quiz => { //quiz es el valor pasado por la anterior promesa
-        return models.quiz.create(quiz); //se añade a la base de datos
-})
-.then((quiz) => {
-        log(`${colorize('Se ha añadido', 'magenta')}: ${quiz.question} ${colorize('=>', 'magenta')} ${quiz.answer}`);
-})
-
-.catch(Sequelize.ValidationError, error => {
-        errorlog ('El quiz es erróneo: ');
-    error.errors.forEach(({message}) => errorlog (message));
-})
-.catch(error => {
-        errorlog(error.message);
-})
-.then(() => {
-        rl.prompt();
-});
-};
-exports.listCmd = rl => {
-
-
-    models.quiz.findAll() //Devuelve todos los quizzes(un array)
-        .then(quizzes => { //Esto se puede hacer tanbien con .each
-        quizzes.forEach(quiz => {   //For que imprime todas las preguntas
-        log(` [${colorize(quiz.id, 'magenta')}]: ${quiz.question}`);
-});
-})
-.catch(error => {
-        errorlog(error.message);
-})
-.then(() => {
-        rl.prompt();
-
-});
-};
-
-
-const validateId = id => {
-
-    return new Sequelize.Promise((resolve, reject) => {
-        if( typeof id === "undefined") {
-        reject(new Error (`Falta el parametro <id>.`));//rechaza promesa por undefined
-    }else{
-        id = parseInt(id);
-        if(Number.isNaN(id)) {
-            reject(new Error (`El valor del parámetro <id> no es un número.`)); //reject es la razon por la que no se cumple la promesa
-        }else{
-            resolve(id); //resolver la promesa con el id que sea
-        }
-    }
-});
-};
-
-
-
-exports.showCmd = (rl,id) => {
-
-    validateId (id)
-        .then(id => models.quiz.findById(id))
 .then(quiz => {
-        if (!quiz){
-        throw new Error(`No existe un quiz asociado al id=${id}.`);
-    }
-    log (`[${colorize(quiz.id, 'magenta')}]:  ${quiz.question} ${colorize('=>','magenta')} ${quiz.answer}`);
-
+        return models.quiz.create(quiz);
+})
+.then(quiz => {
+        log(socket, ` ${colorize('Se ha añadido', 'magenta')}: ${quiz.question} ${colorize('=>', 'magenta')} ${quiz.answer} `);
+})
+.catch(Sequelize.ValidationError, error =>{
+        errorlog(socket, 'El quiz es erroneo:');
+    error.errors.forEach(({message}) => errorlog(socket, message));
 })
 .catch(error => {
-        errorlog(error.message);
+        errorlog(socket, error.message);
 })
 .then(() => {
         rl.prompt();
 });
-
 };
 
-exports.deleteCmd = (rl,id) => {
-
+/**
+ * Borra un quiz del modelo.
+ *
+ * @param rl Objeto readline usado para implementar el CLI.
+ * @param id Clave del quiz a borrar en el modelo.
+ */
+exports.deleteCmd = (socket, rl, id) => {
     validateId(id)
         .then(id => models.quiz.destroy({where: {id}}))
 .catch(error => {
-        errorlog(error.message);
+        errorlog(socket, error.message);
 })
 .then(() => {
         rl.prompt();
 });
+};
 
-}
-exports.editCmd = (rl,id) => {
+/**
+ * Borra un quiz del modelo.
+ *
+ * @param rl Objeto readline usado para implementar el CLI.
+ * @param id Clave del quiz a borrar en el modelo.
+ */
+exports.editCmd = (socket, rl, id) => {
     validateId(id)
         .then(id => models.quiz.findById(id))
-.then(quiz=> {
-        if (!quiz){
+.then(quiz => {
+        if(!quiz){
         throw new Error(`No existe un quiz asociado al id=${id}.`);
     }
-    process.stdout.isTTY && setTimeout(() => {rl.write(quiz.question)},0); //El metodo wtite solo funciona si la salida estandar es un TTY, de ahí la comprobacion al principio de: process.stdout.isTTY
-    return makeQuestion (rl, 'Introduzca la pregunta: ') //promesa que finaliza cuando la pregunta es introducida
+    process.stdout.isTTY && setTimeout (() => {rl.write(quiz.question)}, 0);
+    return makeQuestion(rl, ' Introduzca la pregunta: ')
         .then(q => {
-        process.stdout.isTTY && setTimeout(() => {rl.write(quiz.answer)},0);
-    return makeQuestion(rl, 'Introduzca la respuesta: ')
-        .then(a => { //esto se anida para tener acceso a la variable q
+        process.stdout.isTTY && setTimeout(() => {rl.write(quiz.answer)}, 0);
+    return makeQuestion(rl, ' Introduzca la respuesta ')
+        .then(a => {
         quiz.question = q;
     quiz.answer = a;
     return quiz;
 });
-
 });
 })
-
 .then(quiz => {
-        return quiz.save(); //lo salvo en la base de datos
+        return quiz.save();
 })
-.then(quiz => {
-        log(` Se ha cambiado el quiz: ${colorize(quiz.id, 'magenta')} por : ${question} ${colorize ('=>', 'magenta')} ${answer}`);
+.then(quiz =>{
+        log(socket, ` Se ha cambiado el quiz ${colorize(id, 'magenta')} por: ${quiz.question} ${colorize('=>', 'magenta')} ${quiz.answer} `);
 })
-
 .catch(Sequelize.ValidationError, error => {
-        errorlog ('El quiz es erróneo: ');
-    error.errors.forEach(({message}) => errorlog (message));
+        errorlog(socket, 'El quiz es erroneo:');
+    error.errors.forEach(({message}) => errorlog(socket, message));
 })
 .catch(error => {
-        errorlog(error.message);
+        errorlog(socket, error.message);
 })
 .then(() => {
         rl.prompt();
-})
-
+});
 };
 
-
-exports.testCmd = (rl,id) => {
-
+/**
+ * Borra un quiz del modelo.
+ *
+ * @param rl Objeto readline usado para implementar el CLI.
+ * @param id Clave del quiz a borrar en el modelo.
+ */
+exports.testCmd = (socket, rl, id) => {
     validateId(id)
         .then(id => models.quiz.findById(id))
-.then(quiz=> {
-        if (!quiz){
+.then(quiz => {
+        if(!quiz){
         throw new Error(`No existe un quiz asociado al id=${id}.`);
     }
-
-    return makeQuestion (rl, quiz.question + " ") //promesa que finaliza cuando la pregunta es introducida
+    readQuestion(rl,`${quiz.question}: `)
         .then(answer => {
-
-        if(answer.toLowerCase().trim()===quiz.answer.toLowerCase().trim()){
-
-
-        console.log("Correcta");
-
-
+        if(answer.toUpperCase().trim() === quiz.answer.toUpperCase().trim()){
+        log(socket, "Su respuesta es correcta.");
+        biglog(socket, 'CORRECTA','green');
     }else{
-        console.log("Incorrecta");
-        //resolve();
+        log(socket, 'Su respuesta es incorrecta.');
+        biglog(socket, 'INCORRECTA', 'red');
     }
-
-
+    rl.prompt();
 });
 })
-.catch(Sequelize.ValidationError, error => {
-        errorlog ('El quiz es erróneo: ');
-    error.errors.forEach(({message}) => errorlog (message));
-})
-.catch(error => {
-        errorlog(error.message);
-})
-.then(() => {
+.catch( error => {
+        errorlog(socket, error.message);
+}).then(() => {
+        rl.prompt();
+});
+
+};
+
+/**
+ * Pregunta todos los quizzes existentes en el modelo en orden aleatorio.
+ * Se gana si se contesta a todos satisfactoriamente.
+ *
+ * @param rl Objeto readline usado para implementar el CLI.
+ */
+exports.playCmd = (socket, rl) => {
+    let score = 0
+    let toBeResolved = [];
+    models.quiz.count().then(numOfElements =>{
+        for(let i=0; i<numOfElements; i++){
+        toBeResolved[i]=i+1;
+    }
+}).then(() => {
+        return playStart();
+}).then(() => {
         rl.prompt();
 })
 
-};
-
-
-
-
-exports.playCmd = rl =>{
-    let score =0;
-    let toBePlayed=[];
-
-    const playone = () => {
-
-        return Promise.resolve()
-            .then (() => {
-
-            if(toBePlayed.length<=0){
-            console.log("final!");
-            //resolve();
-            return;
-        }
-        let pos =Math.floor(Math.random()*toBePlayed.length)
-        let quiz = toBePlayed[pos];
-        toBePlayed.splice(pos,1);
-
-        return makeQuestion(rl, quiz.question +'? ')
-            .then(answer => {
-
-            if(answer.toLowerCase().trim()===quiz.answer.toLowerCase().trim()){
-
-            score++;
-            console.log("Correcta");
-            return playone();
-
+    const playStart = () =>{
+        return new Promise((resolve,reject) => {
+            if(toBeResolved.length === 0){
+            log(socket, "Se han acabado las preguntas");
+            log(socket, "Fin del juego. Aciertos:");
+            biglog(socket, score, 'magenta');
+            resolve();
         }else{
-            console.log("Incorrecta");
-            //resolve();
+            let id = toBeResolved[Math.floor((Math.random() * toBeResolved.length))];
+            toBeResolved.splice(toBeResolved.indexOf(id), 1);
+            validateId(id)
+                .then(id => models.quiz.findById(id))
+        .then(quiz =>{
+                if(!quiz){
+                throw new Error(`No existe un quiz asociado al id ${id}`);
+            }
+            readQuestion(rl,`${quiz.question}: `).then(answer => {
+                if(answer.toUpperCase().trim() === quiz.answer.toUpperCase().trim()){
+                score++;
+                log(socket, "CORRECTO - Lleva " + score + " aciertos.");
+                biglog(socket, 'CORRECTA','green');
+                resolve(playStart());
+            }else{
+                log(socket, 'INCORRECTO');
+                log(socket, 'Fin del juego. Aciertos:');
+                biglog(socket, score, 'magenta');
+                resolve();
+            }
+        });
+        }).catch(error => {
+                errorlog(socket, error);
+        });
         }
-    })
-    })
-        //return new Sequelize.Promise((resolve,reject)=>{
-
-        //})
+    });
     };
-
-
-
-    models.quiz.findAll({raw: true})//raw devuelve un array mas pequeño que sin el
-        .then(quizzes => {
-        toBePlayed=quizzes;
-
-})
-.then(()=>{
-        return playone();// con el return el catch se espera hasta que la promesa playone haya acabado(devuelve una promesa)
-})
-.catch(error => {
-        errorlog(error.message);
-})
-.then(() => {
-        console.log('Fin.');
-    console.log('Tu resultado es: ' + score);
-    rl.prompt();
-})
-}
-
-
-exports.creditsCmd = rl => {
-    log("Autora de la práctica");
-    log("Angela Burgaleta Ledesma");
-    rl.prompt();
-
 };
 
-exports.quitCmd = rl => {
-    rl.close();
-    rl.prompt();
+/**
+ * Muestra los nombres de los autores de la práctica.
+ *
+ * @param rl Objeto readline usado para implementar el CLI.
+ */
+exports.creditsCmd = (socket, rl) => {
+    log(socket, 'Autora de la práctica:');
+    log(socket, 'Angela Burgaleta Ledesma', 'green');
 
+    rl.prompt();
+};
+
+/**
+ * Terminar el programa.
+ *
+ * @param rl Objeto readline usado para implementar el CLI.
+ */
+exports.quitCmd = (socket, rl) => {
+    rl.close();
+    socket.end();
 };
