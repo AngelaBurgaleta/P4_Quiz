@@ -1,59 +1,56 @@
 
 const figlet = require('figlet');
 const chalk = require('chalk');
+
 /**
- * Dar color a un string.
- *
- * @param msg Es string al que hay que dar color
- * @param color El color del que se quiere pintar
- * @returns {string} Devuelve el string con el msg a color
- */
-
+* Dar color a un string.
+*
+*param msg 		Es el string al que hay que dar color.
+*param color 	El color con el que pintar el msg.
+*@returns {string} Devuelve el string msg con el color indicado.
+*/
 const colorize = (msg, color) => {
-
-    if(typeof color !== "undefined"){
-        msg=chalk[color].bold(msg);
-    }
-    return msg;
+	if(typeof color !== "undefined"){
+		msg = chalk[color].bold(msg);
+	}
+	return msg;
 };
 
 /**
- * Escribe un msg de log
- *
- * @oaram msg El string a escribir
- * @param color Color del texto
- */
+* Escribe un mensaje de log.
+*
+*param msg 		Es el string a escribir.
+*param color 	El color del texto.
+*/
 
 const log = (socket, msg, color) => {
-   socket.write(colorize(msg, color) + "\n");
+ socket.write(colorize(msg, color) + "\n");
 };
 
 /**
- * Escribe un msg de log grande
- *
- * @param msg El string
- * @param color Color del texto
- */
-const biglog = (socket, msg, color) =>{
-    log(socket, figlet.textSync(msg, {horizontalLayout: 'full'}), color);
+* Escribe un mensaje de log grande.
+*
+*param msg 		Texto a escribir.
+*param color 	Color del texto.
+*/
+
+const biglog = (socket, msg, color) => {
+	log(socket, figlet.textSync(msg, { horizontalLayout: 'full'}), color);
 };
 
-
-
-
 /**
- * Escribe el msg de error emsg
- *
- * @param emsg Texto del msg de error
- */
+* Escribe el mensaje de error emsg.
+*
+*param emsg  Texto del mensaje de error.
+*/
 
 const errorlog = (socket, emsg) => {
-    socket.write(`${colorize("Error", "red")}: ${colorize(colorize(emsg, "red"),"bgYellow ")}\n`);
+	socket.write(`${colorize("Error", "red")}: ${colorize(colorize(emsg, "red"), "bgYellowBright")}\n`);
 };
 
 exports = module.exports = {
-    colorize,
-    log,
-    biglog,
-    errorlog
+	colorize,
+	log,
+	biglog,
+	errorlog
 };
